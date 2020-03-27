@@ -100,24 +100,24 @@ def lambda_handler(event, context):
         cap.release()
         cv2.destroyAllWindows()
         location = boto3.client('s3').get_bucket_location(Bucket=BUCKET)['LocationConstraint']
-        s3_image_link = "https://%s.s3-%s.amazonaws.com/%s" % (BUCKET, location, file_name)
-        print('s3_image_link: ' + s3_image_link)
+        s3_image_link = 'https://%s.s3-%s.amazonaws.com/%s' % (BUCKET, location, file_name)
+        print('S3_image_link: ' + s3_image_link)
 
-
-
-
+        # face detect
+        # ['FaceSearchResponse'][itr]['MatchedFaces'][itr]['Face']['ImageId/FaceId']
         unknown_face = True
         for face in data_face_search_response:
             for matched_face in face["MatchedFaces"]:
-                print("matched_face ===")
-                print(matched_face)
-                print(matched_face['Face']['FaceId'])
-                faceId = matched_face['Face']['FaceId']
-                response = dynamodb_visitors_table.query(KeyConditionExpression=Key('faceId').eq(faceId))
-                print("response =====")
-                print(response['Items'])
-                if len(response['Items']) > 0:
-                    phoneNumber = response['Items'][0]['phone_number']
+                image_id = matched_face['Face']['ImageId']
+                face_id = matched_face['Face']['FaceId']
+                print('Matched_face: \n', matched_face)
+                print('Matched_face_image_id: \n', image_id)
+                print('Matched_face_face_id: \n', face_id)
+                visitor_response = dynamodb_visitors_table.query(KeyConditionExpression=Key('face_id').eq(face_id))
+                print('visitor_response: \n', visitor_response)
+                print(visitor_response['Items'])
+                if len(visitor_response['Items']) > 0:
+                    phoneNumber = visitor_response['Items'][0]['phone_number']
                     currentEpochTime = int(time.time())
                     print("currentEpochTime ============")
                     print(currentEpochTime)
@@ -126,7 +126,7 @@ def lambda_handler(event, context):
                         otp = passcodeResponse['Items'][0]['passcode']
                     else:
                         otp = randint(10**4, 10**5 - 1)
-                        response = dynamodb_passcodes_table.put_item(
+                        visitor_response = dynamodb_passcodes_table.put_item(
                             Item={
                                 'passcode': otp,
                                 'phone_number': phoneNumber,
