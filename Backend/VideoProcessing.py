@@ -1,23 +1,23 @@
 from __future__ import print_function
-
 import logging
 import base64
 import json
 import boto3
-import random
 import os
 import time
 import sys
 import cv2
 from boto3.dynamodb.conditions import Key
-from decimal import Decimal
+from random import randint
 
 DB_VISITOR = 'visitors'
 DB_PASSCODE = 'passcodes'
 DB_REGION = 'us-east-1'
-PHONE_NUMBER = 'XXX-XXX-XXXX'
-STREAM_NAME = 'LiveRekognitionVideoAnalysisBlog'
-STREAM_ARN = 'arn:aws:kinesisvideo:us-west-2:655546244197:stream/LiveRekognitionVideoAnalysisBlog/1572919264579'
+PHONE_NUMBER_DEFAULT = 'XXX-XXX-XXXX'
+STREAM_NAME = 'MyKVS'
+STREAM_ARN = 'arn:aws:kinesisvideo:us-east-1:178190676612:stream/MyKVS/1585017025587'
+STREAM_KEY_ARN = 'arn:aws:kms:us-east-1:178190676612:key/c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
+STREAM_KEY_ID = 'c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
 FRAME_KEY = 'kvs_frame_'
 BUCKET = "rekognitionb1"
 S3_NAME = 'smart-door'
@@ -30,8 +30,8 @@ dynamodb = boto3.resource('dynamodb', region_name=DB_REGION)
 kvs_client = boto3.client('kinesis-video-archived-media')
 rek_client=boto3.client('rekognition')
 
-dynamodb_visitors_table = dynamodb.Table(DB_VISITOR)
-dynamodb_passcodes_table = dynamodb.Table(DB_PASSCODE)
+dynamodb_visitors = dynamodb.Table(DB_VISITOR)
+dynamodb_passcodes = dynamodb.Table(DB_PASSCODE)
 
 sys.path.insert(1, '/opt')
 
@@ -49,10 +49,10 @@ def lambda_handler(event, context):
         data_face_search_response = data_json['FaceSearchResponse']
         data_input_info = data_json['InputInformation']
 
-        print(data_input_info)
+        print('Data input info: \n', data_input_info)
         if len(data_face_search_response) > 0:
             personDetected = True
-            print("FaceSearchResponse not empty = " + json.dumps(data_face_search_response))
+            print('FaceSearchResponse not empty = ' + json.dumps(data_face_search_response))
         else:
             continue
         frag_id = data_input_info['KinesisVideo']['FragmentNumber']
@@ -113,36 +113,40 @@ def lambda_handler(event, context):
                 print('Matched_face: \n', matched_face)
                 print('Matched_face_image_id: \n', image_id)
                 print('Matched_face_face_id: \n', face_id)
-                visitor_response = dynamodb_visitors_table.query(KeyConditionExpression=Key('face_id').eq(face_id))
-                print('visitor_response: \n', visitor_response)
-                print(visitor_response['Items'])
-                if len(visitor_response['Items']) > 0:
-                    phoneNumber = visitor_response['Items'][0]['phone_number']
-                    currentEpochTime = int(time.time())
-                    print("currentEpochTime ============")
-                    print(currentEpochTime)
-                    passcodeResponse = dynamodb_passcodes_table.query(KeyConditionExpression=Key('phone_number').eq(phoneNumber), FilterExpression=Key('ttl').gt(currentEpochTime))
-                    if len(passcodeResponse['Items']) > 0:
-                        otp = passcodeResponse['Items'][0]['passcode']
+                response_visitors = dynamodb_visitors.query(
+                    KeyConditionExpression=Key('face_id').eq(face_id))
+                print('Visitor_response: \n', response_visitors)
+                # print(response_visitors['Items'])
+                if len(response_visitors['Items']) > 0:
+                    phone_number = response_visitors['Items'][0]['phone_number']
+                    print('Current Time: ', int(time.time()))
+                    response_passcodes = dynamodb_passcodes.query(
+                        KeyConditionExpression=Key('phone_number').eq(phone_number),
+                        FilterExpression=Key('ttl').gt(int(time.time())))
+                    if len(response_passcodes['Items']) > 0:
+                        otp = response_passcodes['Items'][0]['passcode']
                     else:
-                        otp = randint(10**4, 10**5 - 1)
-                        visitor_response = dynamodb_passcodes_table.put_item(
+                        otp = randint(10**5, 10**6 - 1)
+                        response_visitors = dynamodb_passcodes.put_item(
                             Item={
                                 'passcode': otp,
-                                'phone_number': phoneNumber,
+                                'phone_number': phone_number,
                                 'ttl': int(time.time() + 5 * 60)
                             })
 
                     sns_client.publish(
-                        PhoneNumber=phoneNumber,
-                        Message='Please visit https://' + S3_NAME + '.s3-us-west-2.amazonaws.com/views/html/wp2.html?phone=' + phoneNumber + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.')
+                        PhoneNumber=phone_number,
+                        Message='Please visit https://' + S3_NAME + '.s3-us-west-2.amazonaws.com/views/html/wp2.html?phone=' + phone_number + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.')
                     unknown_face = False
                 break
         if unknown_face:
             print("unknown_face =")
             sns_client.publish(
-                PhoneNumber=PHONE_NUMBER,
+                PhoneNumber=PHONE_NUMBER_DEFAULT,
                 Message='A new visitor has arrived. Use the link https://' + S3_NAME + 'smartdoorb1.s3-us-west-2.amazonaws.com/views/html/wp1.html?image=' + s3_image_link + ' to approve or deny access.')
             unknown_face = False
 
-    return 'Successfully processed {} records.'.format(len(event['Records']))
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Successfully processed {} records.'.format(len(event['Records'])))
+    }
