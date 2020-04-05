@@ -3,37 +3,33 @@ import logging
 import base64
 import json
 import boto3
-import os
 import time
-import sys
 import cv2
 from boto3.dynamodb.conditions import Key
 from random import randint
 
+REGION = 'us-east-1'
 DB_VISITOR = 'visitors'
 DB_PASSCODE = 'passcodes'
-DB_REGION = 'us-east-1'
 PHONE_NUMBER_DEFAULT = 'XXX-XXX-XXXX'
 STREAM_NAME = 'MyKVS'
 STREAM_ARN = 'arn:aws:kinesisvideo:us-east-1:178190676612:stream/MyKVS/1585017025587'
 STREAM_KEY_ARN = 'arn:aws:kms:us-east-1:178190676612:key/c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
 STREAM_KEY_ID = 'c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
 FRAME_KEY = 'kvs_frame_'
-BUCKET = "rekognitionb1"
-S3_NAME = 'smart-door'
+BUCKET = "smart-door-system"
+S3_NAME = 'smart-door-system'
 
 s3_client = boto3.client('s3')
 s3_resource = boto3.resource('s3')
 sns_client = boto3.client('sns')
 kvs = boto3.client("kinesisvideo")
-dynamodb = boto3.resource('dynamodb', region_name=DB_REGION)
+dynamodb = boto3.resource('dynamodb', region_name=REGION)
 kvs_client = boto3.client('kinesis-video-archived-media')
-rek_client=boto3.client('rekognition')
+# rek_client=boto3.client('rekognition')
 
 dynamodb_visitors = dynamodb.Table(DB_VISITOR)
 dynamodb_passcodes = dynamodb.Table(DB_PASSCODE)
-
-sys.path.insert(1, '/opt')
 
 
 def lambda_handler(event, context):
@@ -58,18 +54,18 @@ def lambda_handler(event, context):
         frag_id = data_input_info['KinesisVideo']['FragmentNumber']
         print("frag id = ", frag_id)
 
-        ########## store image ##########
+        # store image
         # Grab the endpoint from GetDataEndpoint
         endpoint = kvs.get_data_endpoint(
-            APIName="GET_HLS_STREAMING_SESSION_URL",
-            StreamName=STREAM_NAME
+            APIName='GET_HLS_STREAMING_SESSION_URL',
+            StreamARN=STREAM_ARN
         )['DataEndpoint']
         print('Kinesis Data Endpoint: ', endpoint)
-
+        # endpoint = 'https://b-604520a7.kinesisvideo.us-east-1.amazonaws.com'
         # Grab the HLS Stream URL from the endpoint
         kvam = boto3.client('kinesis-video-archived-media', endpoint_url=endpoint)
         url = kvam.get_hls_streaming_session_url(
-            StreamName=STREAM_NAME,
+            StreamARN=STREAM_ARN,
             PlaybackMode="LIVE_REPLAY",
             HLSFragmentSelector={
                 'FragmentSelectorType': 'PRODUCER_TIMESTAMP',
@@ -100,8 +96,8 @@ def lambda_handler(event, context):
         cap.release()
         cv2.destroyAllWindows()
         location = boto3.client('s3').get_bucket_location(Bucket=BUCKET)['LocationConstraint']
-        s3_image_link = 'https://%s.s3-%s.amazonaws.com/%s' % (BUCKET, location, file_name)
-        print('S3_image_link: ' + s3_image_link)
+        S3_image_link = 'https://' + BUCKET + '.s3-' + location + '.amazonaws.com/' + file_name
+        print('S3_image_link: ' + S3_image_link)
 
         # face detect
         # ['FaceSearchResponse'][itr]['MatchedFaces'][itr]['Face']['ImageId/FaceId']
@@ -133,17 +129,22 @@ def lambda_handler(event, context):
                                 'phone_number': phone_number,
                                 'ttl': int(time.time() + 5 * 60)
                             })
-
+                    msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION \
+                        + '.amazonaws.com/views/html/wp2.html?phone=' + phone_number \
+                        + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
                     sns_client.publish(
                         PhoneNumber=phone_number,
-                        Message='Please visit https://' + S3_NAME + '.s3-us-west-2.amazonaws.com/views/html/wp2.html?phone=' + phone_number + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.')
+                        Message=msg)
                     unknown_face = False
                 break
         if unknown_face:
+            msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
+                + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
+                + S3_image_link + ' to approve or deny access.'
             print("unknown_face =")
             sns_client.publish(
                 PhoneNumber=PHONE_NUMBER_DEFAULT,
-                Message='A new visitor has arrived. Use the link https://' + S3_NAME + 'smartdoorb1.s3-us-west-2.amazonaws.com/views/html/wp1.html?image=' + s3_image_link + ' to approve or deny access.')
+                Message=msg)
             unknown_face = False
 
     return {

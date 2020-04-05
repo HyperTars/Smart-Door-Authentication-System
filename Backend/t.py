@@ -117,7 +117,7 @@ def store_image(stream_name, fragmentNumber,faceId):
     
     endpoint = kvs.get_data_endpoint(
         APIName="GET_MEDIA_FOR_FRAGMENT_LIST",
-        StreamName=stream_name
+        StreamName=STREAM_NAME
     )['DataEndpoint']
     print("Kinesis Data endpoint: ",endpoint)
     kvam = boto3.client("kinesis-video-archived-media", endpoint_url=endpoint)
