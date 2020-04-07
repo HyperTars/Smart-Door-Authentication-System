@@ -1,0 +1,6 @@
+########## compile and run AWS KVS SDK in docker ##########
+sudo docker run -it --network="host" 546150905175.dkr.ecr.us-west-2.amazonaws.com/kinesis-video-producer-sdk-cpp-amazon-linux /bin/bash
+
+
+########## start rtsp stream transmission ##########
+gst-launch-1.0 rtspsrc location="rtsp://192.168.0.215:8554/live" short-header=TRUE ! rtph264depay ! h264parse ! video/x-h264, format=avc,alignment=au ! kvssink stream-name="MyKVS" storage-size=512  access-key="AKIAIDUXGNIDJ2XAZSEQ" secret-key="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" aws-region="us-east-1"
