@@ -195,8 +195,8 @@ def lambda_handler(event, context):
                     Message=msg)
                 matched_face_found = True
             else:
-                print('7. KDS no matched faceId, default phone number not defined, SNS suspends.')
-    print('8. Lambda <door_lambda1> ends, time: ' + str(time.time() - time_start) + 's')
+                print('7--. KDS no matched faceId, default phone number not valid, SNS suspends.')
+    print('8. Lambda <door_lambda1> ends, running time: ' + str(time.time() - time_start) + 's')
     return {
         'statusCode': 200,
         'body': json.dumps('Successfully processed {} records.'.format(len(event['Records'])))
