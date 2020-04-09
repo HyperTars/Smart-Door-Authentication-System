@@ -34,6 +34,10 @@ response = client.describe_stream_processor(
     Name='MyStreamProcessor'
 )
 
+# response = client.stop_stream_processor(
+#     Name='MyStreamProcessor'
+# )
+
 # response = client.delete_stream_processor(
 #     Name='MyStreamProcessor'
 # )
