@@ -7,10 +7,12 @@ import time
 import cv2
 from boto3.dynamodb.conditions import Key
 from random import randint
+from decimal import Decimal
 
 REGION = 'us-east-1'
 DB_VISITOR = 'visitors'
 DB_PASSCODE = 'passcodes'
+DB_MESSAGE = 'messages'
 DEFAULT_PHONE_NUMBER = '+13474051241'
 STREAM_NAME = 'MyKVS'
 STREAM_ARN = 'arn:aws:kinesisvideo:us-east-1:178190676612:stream/MyKVS/1585017025587'
@@ -29,22 +31,39 @@ kvs_client = boto3.client('kinesis-video-archived-media')
 
 dynamodb_visitors = dynamodb.Table(DB_VISITOR)
 dynamodb_passcodes = dynamodb.Table(DB_PASSCODE)
+dynamodb_messages = dynamodb.Table(DB_MESSAGE)
 
 
-def valid_phone(data):
+def valid_phone(phone_number):
     # valid phone sample: E.164 format, +11234567890
-    if not isinstance(data, str):
+    if not isinstance(phone_number, str):
         print('phone number invalid, input should be string')
         return False
-    elif data[0] != '+':
+    if phone_number[0] != '+':
         print('phone number invalid, start with "+"')
         return False
-    elif data[1] != '1':
+    if phone_number[1] != '1':
         print('phone number invalid, other countries not supported')
         return False
-    elif len(data) != 12:
+    if len(phone_number) != 12:
         print('phone number invalid, digits length 11')
         return False
+
+    response_messages = dynamodb_messages.query(KeyConditionExpression=Key('phoneNumber').eq(phone_number))
+    if len(response_messages['Items']) == 0:
+        dynamodb_messages.put_item(
+            Item={'phoneNumber': phone_number,
+                  'updateTime': Decimal.from_float(time.time())})
+    else:
+        time_passed = time.time() - float(response_messages['Items'][0]['updateTime'])
+        if time_passed < 60:
+            print('7--. SNS suspends. Message to number ' + phone_number + ' sent less than 30s ago, SNS suspends. Time passed: ' + str(time_passed))
+            return False
+        dynamodb_messages.update_item(
+            Key={'phoneNumber': phone_number},
+            UpdateExpression='set updateTime=:t',
+            ExpressionAttributeValues={':t': Decimal.from_float(time.time())})
+    # message sent too frequently
     return True
 
 
@@ -119,12 +138,12 @@ def lambda_handler(event, context):
             for matched_face in face["MatchedFaces"]:
                 print('7-1. KDS matched face found: ', matched_face)
                 face_id = matched_face['Face']['FaceId']
-                print('7-2. Search matched face id from KDS:' + face_id + ' in DynamoDB visitors table')
+                print('7-2. DynamoDB search matched KDS face id : ' + face_id + ' in visitors table')
                 response_visitors = dynamodb_visitors.query(KeyConditionExpression=Key('faceId').eq(face_id))
                 if len(response_visitors['Items']) > 0:
                     print('7-3. DynamoDB visitor with matched faceId found:', response_visitors)
                     visitors_phone_number = response_visitors['Items'][0]['phoneNumber']
-                    print('7-4. Search phone number from DynamoDB visitors table:' + visitors_phone_number + ' in DynamoDB passcodes table')
+                    print('7-4. DynamoDB search phone number :' + visitors_phone_number + ' in passcodes table')
                     response_passcodes = dynamodb_passcodes.query(
                         KeyConditionExpression=Key('phoneNumber').eq(visitors_phone_number),
                         FilterExpression=Key('ttl').gt(int(time.time())))
@@ -136,7 +155,7 @@ def lambda_handler(event, context):
                         print('7-5. DynamoDB passcodes with visitor phone number not found, response: ', response_passcodes)
                         otp = randint(10**5, 10**6 - 1)
                         ttl = int(time.time() + 5 * 60)
-                        response_visitors = dynamodb_passcodes.put_item(
+                        dynamodb_passcodes.put_item(
                             Item={
                                 'passcode': otp,
                                 'phoneNumber': visitors_phone_number,
