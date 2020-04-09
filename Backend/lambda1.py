@@ -11,7 +11,7 @@ from random import randint
 REGION = 'us-east-1'
 DB_VISITOR = 'visitors'
 DB_PASSCODE = 'passcodes'
-PHONE_NUMBER_DEFAULT = ''
+DEFAULT_PHONE_NUMBER = '+13474051241'
 STREAM_NAME = 'MyKVS'
 STREAM_ARN = 'arn:aws:kinesisvideo:us-east-1:178190676612:stream/MyKVS/1585017025587'
 STREAM_KEY_ARN = 'arn:aws:kms:us-east-1:178190676612:key/c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
@@ -31,12 +31,30 @@ dynamodb_visitors = dynamodb.Table(DB_VISITOR)
 dynamodb_passcodes = dynamodb.Table(DB_PASSCODE)
 
 
+def valid_phone(data):
+    # valid phone sample: E.164 format, +11234567890
+    if not isinstance(data, str):
+        print('phone number invalid, input should be string')
+        return False
+    elif data[0] != '+':
+        print('phone number invalid, start with "+"')
+        return False
+    elif data[1] != '1':
+        print('phone number invalid, other countries not supported')
+        return False
+    elif len(data) != 12:
+        print('phone number invalid, digits length 11')
+        return False
+    return True
+
+
 def lambda_handler(event, context):
     logging.info("API CALLED. EVENT IS:{}".format(event))
     time_start = time.time()
     personDetected = False
     for record in event['Records']:
-        # decode Kinesis data
+        ###################
+        # decode KDS data
         if personDetected is True:
             break
         data_decode = base64.b64decode(record['kinesis']['data']).decode('utf-8')
@@ -47,18 +65,20 @@ def lambda_handler(event, context):
         print('1. KDS Data input info: ', data_input_info)
         if len(data_face_search_response) > 0:
             personDetected = True
-            print('2. KDS FaceSearchResponse not empty ' + json.dumps(data_face_search_response))
+            print('2. KDS FaceSearchResponse not empty ', json.dumps(data_face_search_response))
         else:
-            print('2. KDS FaceSearchResponse is empty, skip this record')
+            print('2. KDS FaceSearchResponse is empty, no face detected, skip this record')
             continue
+        ###################
 
-        # store image
+        ###################
+        # upload KVS stream capture to S3
         # Grab the endpoint from GetDataEndpoint
         endpoint = kvs.get_data_endpoint(
             APIName='GET_HLS_STREAMING_SESSION_URL',
             StreamARN=STREAM_ARN
         )['DataEndpoint']
-        print('3. KVS Data Endpoint: ', endpoint)
+        print('3. KVS Stream Endpoint: ', endpoint)
         # Grab the HLS Stream URL from the endpoint
         kvam = boto3.client('kinesis-video-archived-media', endpoint_url=endpoint)
         url = kvam.get_hls_streaming_session_url(
@@ -66,7 +86,7 @@ def lambda_handler(event, context):
             PlaybackMode="LIVE",
             HLSFragmentSelector={'FragmentSelectorType': 'SERVER_TIMESTAMP'}
         )['HLSStreamingSessionURL']
-        print('4. KVS HLSStreamingSessionURL: ', url)
+        print('4. KVS HLS streaming session URL: ', url)
         cap = cv2.VideoCapture(url)
         file_name = ''
         while(True):
@@ -75,86 +95,86 @@ def lambda_handler(event, context):
             if frame is not None:
                 # Display the resulting frame
                 cap.set(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / 2) - 1)
-                file_name = 'tmp/' + FRAME_KEY + time.strftime("%Y%m%d-%H%M%S") + '.jpg'
-                cv2.imwrite('/' + file_name, frame)
-                print('5. KVS Frame captured, written to local address: /' + file_name)
+                file_name = '/tmp/' + FRAME_KEY + time.strftime("%Y%m%d-%H%M%S") + '.jpg'
+                cv2.imwrite(file_name, frame)
+                print('5. KVS Frame captured, written to local address: ' + file_name)
                 break
             else:
-                print("5. KVS Frame is None, skip")
-                break
+                print("5. KVS Frame is None")
+                continue
         # release capture
         cap.release()
         cv2.destroyAllWindows()
 
-        s3_client.upload_file('/' + file_name, BUCKET, file_name)
-        S3_image_link = 'https://' + BUCKET + '.s3.amazonaws.com/' + file_name
-        print('6. KVS frame uploaded to S3, BUCKET: ' + BUCKET + ', file name: /' + file_name + ', S3_image_link: ' + S3_image_link)
+        s3_client.upload_file(file_name, BUCKET, file_name[1:])
+        S3_image_link = 'https://' + BUCKET + '.s3.amazonaws.com' + file_name
+        print('6. KVS frame uploaded to S3, BUCKET: ' + BUCKET + ', file name: ' + file_name + ', S3_image_link: ' + S3_image_link)
+        ###################
 
-        # face detect
+        ###################
+        # sends SNS message based on face detection results from KDS
         # ['FaceSearchResponse'][itr]['MatchedFaces'][itr]['Face']['ImageId/FaceId']
-        unknown_face = True
+        matched_face_found = False
         for face in data_face_search_response:
             for matched_face in face["MatchedFaces"]:
-                image_id = matched_face['Face']['ImageId']
+                print('7-1. KDS matched face found: ', matched_face)
                 face_id = matched_face['Face']['FaceId']
-                print('7-1. KDS face matched: ', matched_face)
-                print('7-2. KDS face matched - image id: ', image_id)
-                print('7-3. KDS face matched - face id: ', face_id)
-                response_visitors = dynamodb_visitors.query(
-                    KeyConditionExpression=Key('faceId').eq(face_id))
-                print('7-4. DynamoDB visitors response: ', response_visitors)
+                print('7-2. Search matched face id from KDS:' + face_id + ' in DynamoDB visitors table')
+                response_visitors = dynamodb_visitors.query(KeyConditionExpression=Key('faceId').eq(face_id))
                 if len(response_visitors['Items']) > 0:
-                    phone_number = response_visitors['Items'][0]['phone_number']
+                    print('7-3. DynamoDB visitor with matched faceId found:', response_visitors)
+                    visitors_phone_number = response_visitors['Items'][0]['phoneNumber']
+                    print('7-4. Search phone number from DynamoDB visitors table:' + visitors_phone_number + ' in DynamoDB passcodes table')
                     response_passcodes = dynamodb_passcodes.query(
-                        KeyConditionExpression=Key('phoneNumber').eq(phone_number),
+                        KeyConditionExpression=Key('phoneNumber').eq(visitors_phone_number),
                         FilterExpression=Key('ttl').gt(int(time.time())))
-                    print('7-5. DynamoDB passcodes response: ', response_passcodes)
                     if len(response_passcodes['Items']) > 0:
+                        print('7-5. DynamoDB passcodes with visitor phone number found: ', response_passcodes['Items'])
                         otp = response_passcodes['Items'][0]['passcode']
-                        print('7-6. DynamoDB passcode exists, otp:', str(otp))
+                        print('7-6. DynamoDB exists visitor phone number: ' + visitors_phone_number + ', passcode: ' + str(otp))
                     else:
+                        print('7-5. DynamoDB passcodes with visitor phone number not found, response: ', response_passcodes)
                         otp = randint(10**5, 10**6 - 1)
                         ttl = int(time.time() + 5 * 60)
-                        print('7-6. DynamoDB passcode not exists, upload new otp: ' + str(otp) + ', ttl: ' + ttl + ', phone number: ' + phone_number)
                         response_visitors = dynamodb_passcodes.put_item(
                             Item={
                                 'passcode': otp,
-                                'phone_number': phone_number,
+                                'phoneNumber': visitors_phone_number,
                                 'ttl': ttl
                             })
-                    msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION \
-                        + '.amazonaws.com/views/html/wp2.html?phone=' + phone_number \
-                        + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
-                    print('7-7. SNS message_known_face to phone number: ' + phone_number + ', message: ' + msg)
-                    sns_client.publish(
-                        PhoneNumber=phone_number,
-                        Message=msg)
-                    unknown_face = False
-                else:
-                    print('7-5. KDS faceId not in DyanoDB visitors table, take it as unknown face.')
-                    msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
-                        + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
-                        + S3_image_link + ' to approve or deny access.'
-                    if (PHONE_NUMBER_DEFAULT != ''):
-                        print('7-6. KDS faceId not in DyanoDB visitors table, SNS message_unknown_face to phone number: ' + PHONE_NUMBER_DEFAULT + ', message: ' + msg)
+                        print('7-6. DynamoDB new otp uploaded to passcodes table: ' + str(otp) + ', ttl: ' + str(ttl) + ', phone number: ' + visitors_phone_number)
+                    if valid_phone(visitors_phone_number):
+                        msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION \
+                            + '.amazonaws.com/views/html/wp2.html?phone=' + visitors_phone_number \
+                            + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
+                        print('7-7. SNS sends known face message: ' + msg)
                         sns_client.publish(
-                            PhoneNumber=PHONE_NUMBER_DEFAULT,
+                            PhoneNumber=visitors_phone_number,
                             Message=msg)
-                        unknown_face = False
+                else:
+                    print('7-3. KDS matched faceId not found in DynamoDB visitors table, response: ', response_visitors)
+                    if valid_phone(DEFAULT_PHONE_NUMBER):
+                        msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
+                            + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
+                            + S3_image_link + ' to approve or deny access.'
+                        print('7-4. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
+                        sns_client.publish(
+                            PhoneNumber=DEFAULT_PHONE_NUMBER,
+                            Message=msg)
                     else:
-                        print('7-6. KDS faceId not in DyanoDB visitors table, default phone number not defined, SNS suspends.')
-                        unknown_face = False
+                        print('7-4. Default phone number not valid, SNS suspends.')
+                matched_face_found = True
                 break
-        if unknown_face:
+        if not matched_face_found:
             msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
                 + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
                 + S3_image_link + ' to approve or deny access.'
-            if (PHONE_NUMBER_DEFAULT != ''):
-                print('7. KDS no matched faceId, SNS message_unknown_face to phone number: ' + PHONE_NUMBER_DEFAULT + ', message: ' + msg)
+            if valid_phone(DEFAULT_PHONE_NUMBER):
+                print('7. KDS no matched faceId, SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
                 sns_client.publish(
-                    PhoneNumber=PHONE_NUMBER_DEFAULT,
+                    PhoneNumber=DEFAULT_PHONE_NUMBER,
                     Message=msg)
-                unknown_face = False
+                matched_face_found = True
             else:
                 print('7. KDS no matched faceId, default phone number not defined, SNS suspends.')
     print('8. Lambda <door_lambda1> ends, time: ' + str(time.time() - time_start) + 's')
