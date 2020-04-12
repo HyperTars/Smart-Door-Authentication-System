@@ -37,18 +37,19 @@ dynamodb_messages = dynamodb.Table(DB_MESSAGE)
 def valid_phone(phone_number):
     # valid phone sample: E.164 format, +11234567890
     if not isinstance(phone_number, str):
-        print('phone number invalid, input should be string')
+        print('7--. phone number invalid, input should be string')
         return False
     if phone_number[0] != '+':
-        print('phone number invalid, start with "+"')
+        print('7--.phone number invalid, start with "+"')
         return False
     if phone_number[1] != '1':
-        print('phone number invalid, other countries not supported')
+        print('7--.phone number invalid, other countries not supported')
         return False
     if len(phone_number) != 12:
-        print('phone number invalid, digits length 11')
+        print('7--.phone number invalid, digits length 11')
         return False
 
+    # check whether message already sent
     response_messages = dynamodb_messages.query(KeyConditionExpression=Key('phoneNumber').eq(phone_number))
     if len(response_messages['Items']) == 0:
         dynamodb_messages.put_item(
@@ -63,7 +64,6 @@ def valid_phone(phone_number):
             Key={'phoneNumber': phone_number},
             UpdateExpression='set updateTime=:t',
             ExpressionAttributeValues={':t': Decimal.from_float(time.time())})
-    # message sent too frequently
     return True
 
 
@@ -175,13 +175,11 @@ def lambda_handler(event, context):
                     if valid_phone(DEFAULT_PHONE_NUMBER):
                         msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
                             + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
-                            + S3_image_link + ' to approve or deny access.'
+                            + S3_image_link + '&faceId=' + face_id + ' to approve or deny access.'
                         print('7-4. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
                         sns_client.publish(
                             PhoneNumber=DEFAULT_PHONE_NUMBER,
                             Message=msg)
-                    else:
-                        print('7-4. Default phone number not valid or message already sent, SNS suspends.')
                 matched_face_found = True
                 break
         if not matched_face_found:
