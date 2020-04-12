@@ -37,18 +37,19 @@ dynamodb_messages = dynamodb.Table(DB_MESSAGE)
 def valid_phone(phone_number):
     # valid phone sample: E.164 format, +11234567890
     if not isinstance(phone_number, str):
-        print('phone number invalid, input should be string')
+        print('7--. phone number invalid, input should be string')
         return False
     if phone_number[0] != '+':
-        print('phone number invalid, start with "+"')
+        print('7--.phone number invalid, number starts with "+"')
         return False
     if phone_number[1] != '1':
-        print('phone number invalid, other countries not supported')
+        print('7--.phone number invalid, other countries not supported')
         return False
     if len(phone_number) != 12:
-        print('phone number invalid, digits length 11')
+        print('7--.phone number invalid, digits length must be 11')
         return False
 
+    # check whether message already sent
     response_messages = dynamodb_messages.query(KeyConditionExpression=Key('phoneNumber').eq(phone_number))
     if len(response_messages['Items']) == 0:
         dynamodb_messages.put_item(
@@ -63,7 +64,6 @@ def valid_phone(phone_number):
             Key={'phoneNumber': phone_number},
             UpdateExpression='set updateTime=:t',
             ExpressionAttributeValues={':t': Decimal.from_float(time.time())})
-    # message sent too frequently
     return True
 
 
@@ -93,18 +93,11 @@ def lambda_handler(event, context):
         ###################
         # upload KVS stream capture to S3
         # Grab the endpoint from GetDataEndpoint
-        endpoint = kvs_client.get_data_endpoint(
-            APIName='GET_HLS_STREAMING_SESSION_URL',
-            StreamARN=STREAM_ARN
-        )['DataEndpoint']
+        endpoint = kvs_client.get_data_endpoint(APIName='GET_HLS_STREAMING_SESSION_URL', StreamARN=STREAM_ARN)['DataEndpoint']
         print('3. KVS Stream Endpoint: ', endpoint)
         # Grab the HLS Stream URL from the endpoint
         kvam = boto3.client('kinesis-video-archived-media', endpoint_url=endpoint)
-        url = kvam.get_hls_streaming_session_url(
-            StreamARN=STREAM_ARN,
-            PlaybackMode="LIVE",
-            HLSFragmentSelector={'FragmentSelectorType': 'SERVER_TIMESTAMP'}
-        )['HLSStreamingSessionURL']
+        url = kvam.get_hls_streaming_session_url(StreamARN=STREAM_ARN, PlaybackMode="LIVE", HLSFragmentSelector={'FragmentSelectorType': 'SERVER_TIMESTAMP'})['HLSStreamingSessionURL']
         print('4. KVS HLS streaming session URL: ', url)
         cap = cv2.VideoCapture(url)
         file_name = ''
@@ -133,88 +126,64 @@ def lambda_handler(event, context):
         ###################
         # sends SNS message based on face detection results from KDS
         # ['FaceSearchResponse'][itr]['MatchedFaces'][itr]['Face']['ImageId/FaceId']
-        matched_face_found = False
         for face in data_face_search_response:
+            # No faceId in KDS, assign a new one
+            if len(face['MatchedFaces']) == 0:
+                print('7-1. KDS unknown face detected, try to assign new faceId')
+                # save image to S3
+                S3_UNKNOWN_FACE = file_name[5:]
+                s3_client.upload_file(file_name, S3_FACE_BUCKET, S3_UNKNOWN_FACE)
+                print('7-2. S3 uploaded KVS unknown face (no KDS faceId) to: ' + S3_FACE_BUCKET + ', file name: ' + S3_UNKNOWN_FACE)
+                # check if exists in collection (multi-threads may cause async problem, need to check before add to collection)
+                rek_response = rek_client.search_faces_by_image(CollectionId=REK_COLLECTION, Image={'S3Object': {'Bucket': S3_FACE_BUCKET, 'Name': S3_UNKNOWN_FACE}}, FaceMatchThreshold=70)
+                if len(rek_response['FaceMatches']) == 0:
+                    # add to collection
+                    rek_response = rek_client.index_faces(CollectionId=REK_COLLECTION, Image={'S3Object': {'Bucket': S3_FACE_BUCKET, 'Name': S3_UNKNOWN_FACE}}, ExternalImageId=S3_UNKNOWN_FACE, MaxFaces=1, QualityFilter="AUTO", DetectionAttributes=['ALL'])
+                    for faceRecord in rek_response['FaceRecords']:
+                        print('7-3. Rekognition new face added to collection: ' + faceRecord['Face'])
+                    for unindexedFace in rek_response['UnindexedFaces']:
+                        print('7-4. Rekognition unindexed face: ', unindexedFace)
+                else:
+                    # if already in collection (this case happens sometimes)
+                    print('7-3. Rekognition this face already exists: ', rek_response)
+                    s3_client.delete_object(Bucket=S3_FACE_BUCKET, Key=S3_UNKNOWN_FACE)
+                    print('7-4. S3 FACE BUCKET redundant image has been deleted: ', S3_UNKNOWN_FACE)
+                break
+
+            # faceId detected
             for matched_face in face["MatchedFaces"]:
                 print('7-1. KDS matched face found: ', matched_face)
                 face_id = matched_face['Face']['FaceId']
-                print('7-2. DynamoDB search matched KDS face id : ' + face_id + ' in visitors table')
                 response_visitors = dynamodb_visitors.query(KeyConditionExpression=Key('faceId').eq(face_id))
                 if len(response_visitors['Items']) > 0:
-                    print('7-3. DynamoDB visitor with matched faceId found:', response_visitors)
+                    print('7-2. KDS matched faceId found in DynamoDB visitors table: ', response_visitors)
                     visitors_phone_number = response_visitors['Items'][0]['phoneNumber']
-                    print('7-4. DynamoDB search phone number :' + visitors_phone_number + ' in passcodes table')
+                    print('7-3. DynamoDB search phone number :' + visitors_phone_number + ' in passcodes table')
                     response_passcodes = dynamodb_passcodes.query(
                         KeyConditionExpression=Key('phoneNumber').eq(visitors_phone_number),
                         FilterExpression=Key('ttl').gt(int(time.time())))
                     if len(response_passcodes['Items']) > 0:
-                        print('7-5. DynamoDB passcodes with visitor phone number found: ', response_passcodes['Items'])
+                        print('7-4. DynamoDB passcodes with visitor phone number found: ', response_passcodes['Items'])
                         otp = response_passcodes['Items'][0]['passcode']
-                        print('7-6. DynamoDB exists visitor phone number: ' + visitors_phone_number + ', passcode: ' + str(otp))
+                        print('7-5. DynamoDB exists visitor phone number: ' + visitors_phone_number + ', passcode: ' + str(otp))
                     else:
-                        print('7-5. DynamoDB passcodes with visitor phone number not found, response: ', response_passcodes)
+                        print('7-4. DynamoDB passcodes with visitor phone number not found, response: ', response_passcodes)
                         otp = randint(10**5, 10**6 - 1)
                         ttl = int(time.time() + 5 * 60)
-                        dynamodb_passcodes.put_item(
-                            Item={
-                                'passcode': otp,
-                                'phoneNumber': visitors_phone_number,
-                                'ttl': ttl
-                            })
-                        print('7-6. DynamoDB new otp uploaded to passcodes table: ' + str(otp) + ', ttl: ' + str(ttl) + ', phone number: ' + visitors_phone_number)
+                        dynamodb_passcodes.put_item(Item={'passcode': otp, 'phoneNumber': visitors_phone_number, 'ttl': ttl})
+                        print('7-5. DynamoDB new otp uploaded to passcodes table: ' + str(otp) + ', ttl: ' + str(ttl) + ', phone number: ' + visitors_phone_number)
                     if valid_phone(visitors_phone_number):
-                        msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION \
-                            + '.amazonaws.com/views/html/wp2.html?phone=' + visitors_phone_number \
-                            + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
+                        msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION + '.amazonaws.com/views/html/wp2.html?phone=' + visitors_phone_number + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
                         print('7-7. SNS sends known face message: ' + msg)
-                        sns_client.publish(
-                            PhoneNumber=visitors_phone_number,
-                            Message=msg)
+                        sns_client.publish(PhoneNumber=visitors_phone_number, Message=msg)
                 else:
-                    print('7-3. KDS matched faceId not found in DynamoDB visitors table, response: ', response_visitors)
+                    print('7-2. KDS matched faceId not found in DynamoDB visitors table, response: ', response_visitors)
                     if valid_phone(DEFAULT_PHONE_NUMBER):
-                        msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
-                            + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
-                            + S3_image_link + ' to approve or deny access.'
-                        print('7-4. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
-                        sns_client.publish(
-                            PhoneNumber=DEFAULT_PHONE_NUMBER,
-                            Message=msg)
-                    else:
-                        print('7-4. Default phone number not valid or message already sent, SNS suspends.')
-                matched_face_found = True
+                        msg = 'A new visitor has arrived. Use the link https://' + S3_NAME + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' + S3_image_link + '&faceId=' + face_id + ' to approve or deny access.'
+                        print('7-3. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
+                        sns_client.publish(PhoneNumber=DEFAULT_PHONE_NUMBER, Message=msg)
                 break
-        if not matched_face_found:
-            print('7-1. KDS unknown face detected, try to assign new faceId')
-            # save image to S3
-            s3_photo = file_name[5:]
-            s3_client.upload_file(file_name, S3_FACE_BUCKET, s3_photo)
-            S3_image_link = 'https://' + S3_FACE_BUCKET + '.s3.amazonaws.com/' + s3_photo
-            print('7-2. KVS unknown face (no KDS faceId) uploaded to S3_FACE_BUCKET: ' + S3_FACE_BUCKET + ', file name: ' + s3_photo + ', S3_image_link: ' + S3_image_link)
-            # check if exists in collection
-            rek_response = rek_client.search_faces_by_image(CollectionId=REK_COLLECTION,
-                                                            Image={'S3Object': {'Bucket': S3_FACE_BUCKET, 'Name': s3_photo}},
-                                                            FaceMatchThreshold=70)
-            if len(rek_response['FaceMatches']) == 0:
-                # add to collection
-                rek_response = rek_client.index_faces(CollectionId=REK_COLLECTION,
-                                                      Image={'S3Object': {'Bucket': S3_FACE_BUCKET, 'Name': s3_photo}},
-                                                      ExternalImageId=s3_photo,
-                                                      MaxFaces=1,
-                                                      QualityFilter="AUTO",
-                                                      DetectionAttributes=['ALL'])
-                for faceRecord in rek_response['FaceRecords']:
-                    print('7-3. Rekognition new assigned face ID: ' + faceRecord['Face']['FaceId'])
-                    print('7-4. Rekognition Location: {}'.format(faceRecord['Face']['BoundingBox']))
 
-                for unindexedFace in rek_response['UnindexedFaces']:
-                    print('7-5. Rekognition unindexed face Location: {}'.format(unindexedFace['FaceDetail']['BoundingBox']))
-                    for reason in unindexedFace['Reasons']:
-                        print('7-6. Rekognition unindexed face Reasons: ' + reason)
-            else:
-                print('7-3. Rekognition already assigned KVS unknown face (no KDS faceId), faceId already assigned: ', rek_response)
-                s3_client.delete_object(Bucket=S3_FACE_BUCKET, Key=s3_photo)
-                print('7-4. S3 FACE BUCKET redundant image has been deleted: ', s3_photo)
     print('8. Lambda <door_lambda1> ends, running time: ' + str(time.time() - time_start) + 's')
     return {
         'statusCode': 200,
