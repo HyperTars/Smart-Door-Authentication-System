@@ -1,0 +1,21 @@
+service: service
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+
+functions:
+  door_open:
+    handler: build/index.handle
+
+package:
+  exclude:
+    - '**'
+    - '!build'
+    - 'build/**/*.js.map'
+    - 'node_modules/aws-sdk/**'
+  excludeDevDependencies: true
+
+plugins:
+  - serverless-plugin-common-excludes
+  - serverless-plugin-include-dependencies

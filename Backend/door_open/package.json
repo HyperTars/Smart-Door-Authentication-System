@@ -1,0 +1,18 @@
+{
+  "name": "service",
+  "version": "1.0.0",
+  "main": "app.js",
+  "private": true,
+  "scripts": {
+    "build": "tsc && serverless package"
+  },
+  "devDependencies": {
+    "aws-sdk": "^2.633.0",
+    "@types/node": "^13.7.7",
+    "serverless": "^1.67.3",
+    "serverless-plugin-common-excludes": "^3.0.0",
+    "serverless-plugin-include-dependencies": "^4.1.0",
+    "typescript": "^3.8.3",
+    "typescript-json-schema": "^0.42.0"
+  }
+}
