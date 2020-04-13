@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Virtual Door</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+</head>
+
+<body>
+    <nav class="indigo" role="navigation">
+        <div class="nav-wrapper container">
+            <a href="" class="brand-logo">Virtual Door</a>
+        </div>
+    </nav>
+
+    <div class="section">
+        <div class="row center container">
+            <video style="max-width: 100%;" autoplay muted></video>
+        </div>
+        <div class="row center container">
+            <p><span id="pendingSpan">0</span> registered vistors detected</p>
+            <div class="progress">
+                <div class="determinate" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <form method="POST" class="container">
+            <div class="row input-field">
+                <i class="material-icons prefix">phone</i>
+                <input placeholder="123456789" id="phoneNumber" name="phoneNumber" type="tel" class="validate" pattern="\D*(?:\+1)?\D*(?:\d\D*){10}" required title="Please enter a 10 digit phone number.">
+                <label for="phoneNumber">Phone Number</label>
+            </div>
+            <div class="row input-field">
+                <i class="material-icons prefix">vpn_key</i>
+                <input placeholder="XXXXXX" id="passcode" name="passcode" type="text" class="validate" pattern="\d{6}" required title="Please enter the 6 digit passcode you have received." autocomplete="off">
+                <label for="passcode">Passcode</label>
+            </div>
+            <div class="row input-field center">
+                <button class="btn waves-effect waves-light" type="submit" name="action">Unlock
+                    <i class="material-icons right">send</i>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div class="section">
+        <div class="row center container hide" id="doorDiv">
+            <p>Welcome, <span id="nameSpan">anonymous user</span>.</p>
+            <img class="col s12" src="https://s1.ax1x.com/2020/04/13/GvOEpn.jpg"></img>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script>
+        const config = {
+            videoEndpoint: 'user-media',
+            apiEndpoint: 'https://mcz5ettyj1.execute-api.us-east-1.amazonaws.com/prod1',
+        };
+
+        const nav = document.getElementsByTagName('nav')[0];
+        const video = document.getElementsByTagName('video')[0];
+        const progress = document.getElementsByClassName('determinate')[0];
+        const pendingSpan = document.getElementById('pendingSpan');
+        const form = document.getElementsByTagName('form')[0];
+        const doorDiv = document.getElementById('doorDiv');
+        const nameSpan = document.getElementById('nameSpan');
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        video: {
+            (async () => {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 4096, height: 2160 },
+                });
+                video.srcObject = stream;
+            })();
+        }
+
+        pending: {
+            if (config.videoEndpoint === 'user-media') {
+                (async () => {
+                    for (let timer = 0; ; timer = (timer + 1) % 10) {
+                        progress.style.width = `${(timer + 1) * 10}%`;
+                        if (timer === 0) {
+                            const { pending } = await (await fetch(`${config.apiEndpoint}/door`)).json();
+                            pendingSpan.childNodes[0].nodeValue = pending;
+                        }
+                        await sleep(1000);
+                    }
+                })();
+            }
+        }
+
+        form: {
+            form.onsubmit = async (event) => {
+                event.preventDefault();
+
+                const body = Object.fromEntries(new FormData(form).entries());
+                body.phoneNumber = body.phoneNumber.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1');
+                body.passcode = +body.passcode;
+
+                const { error, status, name } = await (await fetch(`${config.apiEndpoint}/door`, {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                    headers: { 'Content-Type': 'image/json' },
+                })).json();
+
+                if (status === 'closed') {
+                    doorDiv.classList.add('hide');
+                }
+                else {
+                    doorDiv.classList.remove('hide');
+                    nameSpan.childNodes[0].nodeValue = name ?? 'anonymous user';
+                }
+
+                switch (error) {
+                    case undefined:
+                        return M.toast({ html: 'Success.' });
+                    case 'ERR_REQUEST_MALFORMED':
+                    case 'ERR_PHONE_NUMBER_INVALID':
+                    case 'ERR_PASSCODE_INVALID':
+                        return M.toast({ html: 'Request malformed.' });
+                    case 'ERR_PHONE_NUMBER_NOT_FOUND':
+                        return M.toast({ html: 'Phone number incorrect.' });
+                    case 'ERR_PASSCODE_INCORRECT':
+                        return M.toast({ html: 'Passcode incorrect.' });
+                    default:
+                        return M.toast({ html: 'Something unknown went wrong.' });
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
