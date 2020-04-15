@@ -67,10 +67,18 @@
         const progress = document.getElementsByClassName('determinate')[0];
         const pendingSpan = document.getElementById('pendingSpan');
         const form = document.getElementsByTagName('form')[0];
+        const phoneNumber = document.getElementById('phoneNumber');
         const doorDiv = document.getElementById('doorDiv');
         const nameSpan = document.getElementById('nameSpan');
 
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        URLSearchParams: {
+            const value = new URLSearchParams(window.location.search).get('phone');
+            if (value) {
+                phoneNumber.value = value;
+            }
+        }
 
         video: {
             (async () => {
@@ -100,13 +108,14 @@
             form.onsubmit = async (event) => {
                 event.preventDefault();
 
-                const body = Object.fromEntries(new FormData(form).entries());
-                body.phoneNumber = body.phoneNumber.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1');
-                body.passcode = +body.passcode;
+                const fromEntries = Object.fromEntries(new FormData(form).entries());
 
                 const { error, status, name } = await (await fetch(`${config.apiEndpoint}/door`, {
                     method: 'POST',
-                    body: JSON.stringify(body),
+                    body: JSON.stringify({
+                        phoneNumber: fromEntries.phoneNumber.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1'),
+                        passcode: +fromEntries.passcode,
+                    }),
                     headers: { 'Content-Type': 'image/json' },
                 })).json();
 
@@ -115,6 +124,7 @@
                 }
                 else {
                     doorDiv.classList.remove('hide');
+                    doorDiv.scrollIntoView({ behavior: 'smooth' });
                     nameSpan.childNodes[0].nodeValue = name ?? 'anonymous user';
                 }
 

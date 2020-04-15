@@ -18,16 +18,21 @@
 
     <div class="section">
         <div class="row center container">
-            <img style="max-width: 100%;"></img>
+            <img style="max-width: 100%;" src="https://homepages.cae.wisc.edu/~ece533/images/lena.png">
         </div>
     </div>
 
     <div class="section">
         <form method="POST" class="container">
             <div class="row input-field">
+                <i class="material-icons prefix">camera_alt</i>
+                <input value="If you see this text, something went wrong." id="faceid" name="faceid" type="text" readonly>
+                <label for="faceid">FaceID</label>
+            </div>
+            <div class="row input-field">
                 <i class="material-icons prefix">person</i>
-                <input placeholder="First Last" id="passcode" name="name" type="text" class="validate" required title="Please enter visitor's name.">
-                <label for="passcode">Name</label>
+                <input placeholder="First Last" id="name" name="name" type="text" class="validate" required title="Please enter visitor's name.">
+                <label for="name">Name</label>
             </div>
             <div class="row input-field">
                 <i class="material-icons prefix">phone</i>
@@ -51,25 +56,33 @@
         const nav = document.getElementsByTagName('nav')[0];
         const img = document.getElementsByTagName('img')[0];
         const form = document.getElementsByTagName('form')[0];
+        const faceid = document.getElementById('faceid');
 
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-        img: {
-            img.src = 'https://homepages.cae.wisc.edu/~ece533/images/lena.png';
+        URLSearchParams: {
+            const search = new URLSearchParams(window.location.search);
+            const src = search.get('image');
+            const value = search.get('faceid');
+            if (src) img.src = src;
+            if (value) faceid.value = value;
         }
 
         form: {
             form.onsubmit = async (event) => {
                 event.preventDefault();
 
-                const body = Object.fromEntries(new FormData(form).entries());
-                body.faceid = null;
-                body.name = +body.name;
-                body.phone = body.phone.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1');
+                const fromEntries = Object.fromEntries(new FormData(form).entries());
 
-                const { error } = await (await fetch(`${config.apiEndpoint}/door`, {
+                const { error } = await (await fetch(`${config.apiEndpoint}/collectinfo`, {
                     method: 'POST',
-                    body: JSON.stringify(body),
+                    body: JSON.stringify({
+                        visitors: {
+                            faceid: fromEntries.faceid,
+                            name: fromEntries.name,
+                            phone: fromEntries.phone.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1')
+                        }
+                    }),
                     headers: { 'Content-Type': 'image/json' },
                 })).json();
                 switch (error) {
