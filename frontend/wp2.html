@@ -76,7 +76,8 @@
         URLSearchParams: {
             const value = new URLSearchParams(window.location.search).get('phone');
             if (value) {
-                phoneNumber.value = value;
+                // plain URL param hack
+                phoneNumber.value = value.replace(/^ /, '+');
             }
         }
 

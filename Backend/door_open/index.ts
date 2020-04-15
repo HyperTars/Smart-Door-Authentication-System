@@ -29,7 +29,7 @@ const handler = async (event: unknown) => {
             Select: 'COUNT',
         }).promise();
 
-        if (!Count) return raise(ret, 'ERR_PENDING_UNKOWN');
+        if (Count === undefined) return raise(ret, 'ERR_PENDING_UNKOWN');
 
         ret.pending = Count;
         return ret;
@@ -47,6 +47,11 @@ const handler = async (event: unknown) => {
 
         const Item = Response.Item as PasscodeTableEntry;
         if (passcode !== Item.passcode) return raise(ret, 'ERR_PASSCODE_INCORRECT');
+
+        await dynamodb.delete({
+            TableName: passcodeTableName,
+            Key: { phoneNumber },
+        }).promise();
 
         if (status !== 'open' && status !== 'closed') return raise(ret, 'ERR_STATUS_INVALID');
 
