@@ -137,7 +137,7 @@
                     case 'ERR_PASSCODE_INVALID':
                         return M.toast({ html: 'Request malformed.' });
                     case 'ERR_PHONE_NUMBER_NOT_FOUND':
-                        return M.toast({ html: 'Phone number incorrect.' });
+                        return M.toast({ html: 'Phone number incorrect or passcode expired.' });
                     case 'ERR_PASSCODE_INCORRECT':
                         return M.toast({ html: 'Passcode incorrect.' });
                     default:
