@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Visitor Registration</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+</head>
+
+<body>
+    <nav class="indigo" role="navigation">
+        <div class="nav-wrapper container">
+            <a href="" class="brand-logo">Visitor Registration</a>
+        </div>
+    </nav>
+
+    <div class="section">
+        <div class="row center container">
+            <img style="max-width: 100%;"></img>
+        </div>
+    </div>
+
+    <div class="section">
+        <form method="POST" class="container">
+            <div class="row input-field">
+                <i class="material-icons prefix">person</i>
+                <input placeholder="First Last" id="passcode" name="name" type="text" class="validate" required title="Please enter visitor's name.">
+                <label for="passcode">Name</label>
+            </div>
+            <div class="row input-field">
+                <i class="material-icons prefix">phone</i>
+                <input placeholder="123456789" id="phoneNumber" name="phone" type="tel" class="validate" pattern="\D*(?:\+1)?\D*(?:\d\D*){10}" required title="Please enter a 10 digit phone number.">
+                <label for="phoneNumber">Phone Number</label>
+            </div>
+            <div class="row input-field center">
+                <button class="btn waves-effect waves-light" type="submit" name="action">Register
+                    <i class="material-icons right">send</i>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script>
+        const config = {
+            apiEndpoint: 'https://mcz5ettyj1.execute-api.us-east-1.amazonaws.com/prod1',
+        };
+
+        const nav = document.getElementsByTagName('nav')[0];
+        const img = document.getElementsByTagName('img')[0];
+        const form = document.getElementsByTagName('form')[0];
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        img: {
+            img.src = 'https://homepages.cae.wisc.edu/~ece533/images/lena.png';
+        }
+
+        form: {
+            form.onsubmit = async (event) => {
+                event.preventDefault();
+
+                const body = Object.fromEntries(new FormData(form).entries());
+                body.faceid = null;
+                body.name = +body.name;
+                body.phone = body.phone.replace(/[^\d\+]/g, '').replace(/^(?!\+1)/, '+1');
+
+                const { error } = await (await fetch(`${config.apiEndpoint}/door`, {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                    headers: { 'Content-Type': 'image/json' },
+                })).json();
+                switch (error) {
+                    case undefined:
+                        return M.toast({ html: 'Success.' });
+                    default:
+                        return M.toast({ html: 'Something unknown went wrong.' });
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
