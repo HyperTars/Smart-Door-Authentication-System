@@ -20,6 +20,7 @@ STREAM_KEY_ARN = 'arn:aws:kms:us-east-1:178190676612:key/c3cf8539-ad7e-4ada-81b8
 STREAM_KEY_ID = 'c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
 FRAME_KEY = 'kvs_frame_'
 S3_NAME = 'smart-door-system'
+COLLECTINFO_NAME = 'door-collectinfo'
 S3_KVS_TEMP_BUCKET = 'smart-door-system'
 S3_FACE_BUCKET = 'my-photo-bucket0'
 REK_COLLECTION = 'MyCollection'
@@ -33,6 +34,14 @@ dynamodb_visitors = dynamodb.Table(DB_VISITOR)
 dynamodb_passcodes = dynamodb.Table(DB_PASSCODE)
 dynamodb_messages = dynamodb.Table(DB_MESSAGE)
 
+
+sns_client_bak = boto3.client('sns',
+            aws_access_key_id='ASIA4QYKHKDEQ4WGF4TO',
+            aws_secret_access_key='ks7s2aqdDfsnbWJWEK3t0thLk6/b2GZHN5K5x8wp',
+            aws_session_token='FwoGZXIvYXdzEIz//////////wEaDABWLH9Q7J95qqLmIyK9AXQeGCx1UiYPMDt7A/cbxxIowmWIOvKLfWjMYne7hI71mLnU3Fb0b7VjPiq1W0gZSpIPW1UA92Ymg6Px7vom9a07uiDcXTWvCX/aVeYBHGDEzjHmlKWZfVZcny4vg+1OJGZ0X1YNBF/XHR72OHDUKUzvy5JOFaoys7xfFgUYl2AJmBXjjkeEwbQiqR6IgzGoBTceuCKiBG3t+E8bb2ccH9o+9MqRT3NDGAz21w6CNb/UN9uYoSI1bc4MQTsadSjZr930BTIt+ixUJjMVqjxmGEC9cJgf2akgfU+JiV+lYfxh5aIheAh6Om07I0nLxsvgLXvQ',
+            region_name = REGION)
+
+sns_client = sns_client_bak
 
 def valid_phone(phone_number):
     # valid phone sample: E.164 format, +11234567890
@@ -125,7 +134,7 @@ def lambda_handler(event, context):
         cap.release()
         cv2.destroyAllWindows()
 
-        s3_client.upload_file(file_name, S3_KVS_TEMP_BUCKET, file_name[1:])
+        s3_client.upload_file(file_name, S3_KVS_TEMP_BUCKET, file_name[1:], ExtraArgs={'ACL': 'public-read'})
         S3_image_link = 'https://' + S3_KVS_TEMP_BUCKET + '.s3.amazonaws.com' + file_name
         print('6. KVS frame uploaded to S3_KVS_TEMP_BUCKET: ' + S3_KVS_TEMP_BUCKET + ', file name: ' + file_name + ', S3_image_link: ' + S3_image_link)
         ###################
@@ -163,8 +172,7 @@ def lambda_handler(event, context):
                             })
                         print('7-6. DynamoDB new otp uploaded to passcodes table: ' + str(otp) + ', ttl: ' + str(ttl) + ', phone number: ' + visitors_phone_number)
                     if valid_phone(visitors_phone_number):
-                        msg = 'Please visit https://' + S3_NAME + '.s3-' + REGION \
-                            + '.amazonaws.com/views/html/wp2.html?phone=' + visitors_phone_number \
+                        msg = 'Please visit https://' + S3_NAME + '.s3.amazonaws.com/wp2.html?phone=%2B' + visitors_phone_number[1:] \
                             + ' to get access to the door. Your otp is ' + str(otp) + ' and will expire in 5 minutes.'
                         print('7-7. SNS sends known face message: ' + msg)
                         sns_client.publish(
@@ -173,9 +181,9 @@ def lambda_handler(event, context):
                 else:
                     print('7-3. KDS matched faceId not found in DynamoDB visitors table, response: ', response_visitors)
                     if valid_phone(DEFAULT_PHONE_NUMBER):
-                        msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
-                            + '.s3-' + REGION + '.amazonaws.com/views/html/wp1.html?image=' \
-                            + S3_image_link + '&faceId=' + face_id + ' to approve or deny access.'
+                        msg = 'A new visitor has arrived. Use the link https://' + COLLECTINFO_NAME  \
+                            + '.s3.amazonaws.com/collectinfo.html?image=' \
+                            + S3_image_link + '&faceid=' + face_id + ' to approve or deny access.'
                         print('7-4. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
                         sns_client.publish(
                             PhoneNumber=DEFAULT_PHONE_NUMBER,
@@ -186,7 +194,7 @@ def lambda_handler(event, context):
             print('7-1. KDS unknown face detected, try to assign new faceId')
             # save image to S3
             s3_photo = file_name[5:]
-            s3_client.upload_file(file_name, S3_FACE_BUCKET, s3_photo)
+            s3_client.upload_file(file_name, S3_FACE_BUCKET, s3_photo, ExtraArgs={'ACL': 'public-read'})
             S3_image_link = 'https://' + S3_FACE_BUCKET + '.s3.amazonaws.com/' + s3_photo
             print('7-2. KVS unknown face (no KDS faceId) uploaded to S3_FACE_BUCKET: ' + S3_FACE_BUCKET + ', file name: ' + s3_photo + ', S3_image_link: ' + S3_image_link)
             # check if exists in collection
