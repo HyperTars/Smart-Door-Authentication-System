@@ -20,7 +20,6 @@ STREAM_KEY_ARN = 'arn:aws:kms:us-east-1:178190676612:key/c3cf8539-ad7e-4ada-81b8
 STREAM_KEY_ID = 'c3cf8539-ad7e-4ada-81b8-f440cd6d5af2'
 FRAME_KEY = 'kvs_frame_'
 S3_NAME = 'smart-door-system'
-COLLECTINFO_NAME = 'door-collectinfo'
 S3_KVS_TEMP_BUCKET = 'smart-door-system'
 S3_FACE_BUCKET = 'my-photo-bucket0'
 REK_COLLECTION = 'MyCollection'
@@ -36,9 +35,9 @@ dynamodb_messages = dynamodb.Table(DB_MESSAGE)
 
 
 sns_client_bak = boto3.client('sns',
-            aws_access_key_id='ASIA4QYKHKDEQ4WGF4TO',
-            aws_secret_access_key='ks7s2aqdDfsnbWJWEK3t0thLk6/b2GZHN5K5x8wp',
-            aws_session_token='FwoGZXIvYXdzEIz//////////wEaDABWLH9Q7J95qqLmIyK9AXQeGCx1UiYPMDt7A/cbxxIowmWIOvKLfWjMYne7hI71mLnU3Fb0b7VjPiq1W0gZSpIPW1UA92Ymg6Px7vom9a07uiDcXTWvCX/aVeYBHGDEzjHmlKWZfVZcny4vg+1OJGZ0X1YNBF/XHR72OHDUKUzvy5JOFaoys7xfFgUYl2AJmBXjjkeEwbQiqR6IgzGoBTceuCKiBG3t+E8bb2ccH9o+9MqRT3NDGAz21w6CNb/UN9uYoSI1bc4MQTsadSjZr930BTIt+ixUJjMVqjxmGEC9cJgf2akgfU+JiV+lYfxh5aIheAh6Om07I0nLxsvgLXvQ',
+            aws_access_key_id='ASIA4QYKHKDEQ5AVRV2Z',
+            aws_secret_access_key='l9gTghuHJVvgLBDJeBvxsBc9omL306Xq22CvD9uQ',
+            aws_session_token='FwoGZXIvYXdzEJH//////////wEaDC++7kvfP4oO8YDMPCK9Abi8wwZeLofAxx1SQk5/LbYuM5taOg7Ibwsk3Gb2XVsl5YV1ZS0vqgV2j/TGJW32bhyLgzIkiu15JGcwGzEqLmy+I4GR5hlLBKbb0ZSqX0Ndyqevp6fHw0yJhRonB44EG1s/KhwozgFGXS+DF4z1dGxbu9l2FgFC5ZjdCXbj6IeG4OpLlrtE632LeqpivMVxVl0Svn6kXzhZR1imT5NOd77Q+opx+a93UgNYLKdp6l9CefwiOk0WS3XHE9OX5iift970BTItLHG4EAcedrib1aav6CLkQ6NhFjSboT+X724iw8i/v3Yj4VzU3EG49tH1k5af',
             region_name = REGION)
 
 sns_client = sns_client_bak
@@ -181,7 +180,7 @@ def lambda_handler(event, context):
                 else:
                     print('7-3. KDS matched faceId not found in DynamoDB visitors table, response: ', response_visitors)
                     if valid_phone(DEFAULT_PHONE_NUMBER):
-                        msg = 'A new visitor has arrived. Use the link https://' + COLLECTINFO_NAME  \
+                        msg = 'A new visitor has arrived. Use the link https://' + S3_NAME  \
                             + '.s3.amazonaws.com/collectinfo.html?image=' \
                             + S3_image_link + '&faceid=' + face_id + ' to approve or deny access.'
                         print('7-4. SNS sends unknown face to default phone number: ' + DEFAULT_PHONE_NUMBER + ', message: ' + msg)
