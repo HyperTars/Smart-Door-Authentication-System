@@ -9,7 +9,7 @@
     - Otherwise it will record visitor's mobile phone number and send an access request to the owner of the smart door. The owner can see the video stream in a web page and choose whether to grant the visitor access. 
         - If the owner grants the access, the visitor will get a temporary access code via SMS and marked as known visitor in the system.
 
-- AWS service used:
+- AWS services used:
     - **S3** to store known visitors' images and frontend
     - **DynamoDB** to store visitors information and temporary access codes and set TTL
     - **Kinesis Video Stream** to stream video
@@ -18,6 +18,8 @@
     - **SNS** to send One-Time Passcode
     - **Lambda** to trigger and process events
     - **API Gateway**
+
+- See full [Instructions](Instruction.pdf)
 
 - Architecture Diagram
 
