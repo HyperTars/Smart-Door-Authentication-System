@@ -1,5 +1,10 @@
 # Smart-Door-Authentication
-
+- Collection: AWS-based serverless cloud applications
+    - [Malika Keller Dining Concierge Chatbot](https://github.com/HyperTars/Malika-Keller-Dining-Concierge-Chatbot)
+    - [Smart Door Authentication System](https://github.com/HyperTars/Smart-Door-Authentication-System)
+    - [Voice Controlled Photo Search](https://github.com/HyperTars/Voice-Controlled-Photo-Search)
+    - [Spam Tagging System](https://github.com/HyperTars/Spam-Tagging-System)
+ 
 - Smart Door Authentication is an AWS-based serverless cloud application that
     - Live streams the video at the smart door
     - Performs facial recognition analysis to identify faces on the video stream from the smart door
