@@ -1,6 +1,6 @@
 # Smart-Door-Authentication
 
-- Smart Door Authentication is an AWS-based serverless cloud background project that
+- Smart Door Authentication is an AWS-based serverless cloud application that
     - Live streams the video at the smart door
     - Performs facial recognition analysis to identify faces on the video stream from the smart door
     - Cross-compares with the face in the known visitor library and gets similarity
