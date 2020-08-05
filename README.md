@@ -26,6 +26,20 @@
 
 - See full [Instructions](Instruction.pdf)
 
+- Frontend Interface
+    - For admin (host)
+    
+        ![visitor](smartDoor1.png)
+        
+    - For new visitor (register information)
+    
+        ![unknown](smartDoor2.png)
+        
+    - For knwon visitor (enter passcode)
+    
+        ![known](smartDoor3.png)
+
+
 - Architecture Diagram
 
 ![overview](architecture.png)
